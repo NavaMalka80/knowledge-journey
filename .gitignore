@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets: API keys live only in environment variables, never in git
+.env
+.env.*
+!.env.example
+
+# Generated game packages and exports
+exports/
+*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node (for future frontend tooling)
+node_modules/
