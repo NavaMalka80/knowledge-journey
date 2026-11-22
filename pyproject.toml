@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Knowledge Journey (מסע הידע): an offline-first classroom quiz game with an AI pedagogical review agent."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.8",
+]
+
+[project.scripts]
+kj = "knowledge_journey.cli:main"
 
 [dependency-groups]
 dev = [
@@ -13,6 +18,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pre-commit>=3.8",
+    "jsonschema>=4.23",
+    "types-jsonschema>=4.26.0.20261006",
 ]
 
 [build-system]
