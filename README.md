@@ -93,8 +93,8 @@ knowledge-journey/
 │   ├── ROADMAP.md           # תוכנית העבודה לפי שלבים
 │   ├── LEARNING.md          # יומן לימוד: מושגים שנלמדו בכל שלב
 │   ├── ARCHITECTURE.md      # ארכיטקטורה מפורטת
-│   ├── adr/                 # Architecture Decision Records
-│   └── spec/                # מסמך האפיון המקורי של הלקוחה
+│   ├── REQUIREMENTS.md      # דרישות המוצר
+│   └── adr/                 # Architecture Decision Records
 ├── .github/workflows/       # CI
 └── CLAUDE.md                # הקשר והנחיות לסוכן הפיתוח (Claude Code)
 ```
