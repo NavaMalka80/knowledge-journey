@@ -34,6 +34,8 @@ uv run ruff check .          # lint
 uv run ruff format .         # עיצוב קוד
 uv run mypy                  # בדיקת טיפוסים (strict)
 uv run pre-commit install    # הפעלת hooks לפני כל commit (פעם אחת)
+uv run kj validate examples/water-cycle.json   # בדיקת קובץ משחק
+uv run kj schema -o schema/game.schema.json    # עדכון ה-Schema אחרי שינוי במודל
 ```
 
 לפני כל commit: `ruff check`, `ruff format --check`, `mypy` ו-`pytest` צריכים לעבור. זה בדיוק מה ש-CI בודק.
