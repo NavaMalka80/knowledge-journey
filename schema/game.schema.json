@@ -1,0 +1,502 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AnchorStep": {
+      "additionalProperties": false,
+      "description": "Shows the game's anchor question.\n\nThe anchor is stored once, on the game, and stations 1 and 7 only point to it,\nso the two appearances cannot drift apart.",
+      "properties": {
+        "type": {
+          "const": "anchor",
+          "default": "anchor",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "AnchorStep",
+      "type": "object"
+    },
+    "ApprovalStatus": {
+      "description": "Where the game stands in the teacher's workflow.",
+      "enum": [
+        "draft",
+        "reviewed",
+        "approved"
+      ],
+      "title": "ApprovalStatus",
+      "type": "string"
+    },
+    "Difficulty": {
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "title": "Difficulty",
+      "type": "string"
+    },
+    "IdentityCard": {
+      "additionalProperties": false,
+      "description": "Who the game is for and what it should achieve.\n\nFeeds both the review agent and the facilitator guide.",
+      "properties": {
+        "subject": {
+          "minLength": 1,
+          "title": "Subject",
+          "type": "string"
+        },
+        "topic": {
+          "minLength": 1,
+          "title": "Topic",
+          "type": "string"
+        },
+        "age_min": {
+          "maximum": 120,
+          "minimum": 3,
+          "title": "Age Min",
+          "type": "integer"
+        },
+        "age_max": {
+          "maximum": 120,
+          "minimum": 3,
+          "title": "Age Max",
+          "type": "integer"
+        },
+        "grades": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Grades",
+          "type": "array"
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "prior_knowledge": {
+          "default": "",
+          "title": "Prior Knowledge",
+          "type": "string"
+        },
+        "learning_goals": {
+          "items": {
+            "$ref": "#/$defs/LearningGoal"
+          },
+          "maxItems": 6,
+          "minItems": 4,
+          "title": "Learning Goals",
+          "type": "array"
+        },
+        "participants": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Participants"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "topic",
+        "age_min",
+        "age_max",
+        "grades",
+        "mode",
+        "learning_goals"
+      ],
+      "title": "IdentityCard",
+      "type": "object"
+    },
+    "KnowledgeItem": {
+      "additionalProperties": false,
+      "description": "One concept presented on screen: a \"knowledge key\".",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "concept": {
+          "minLength": 1,
+          "title": "Concept",
+          "type": "string"
+        },
+        "definition": {
+          "minLength": 1,
+          "title": "Definition",
+          "type": "string"
+        },
+        "example": {
+          "minLength": 1,
+          "title": "Example",
+          "type": "string"
+        },
+        "goal_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Goal Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "concept",
+        "definition",
+        "example",
+        "goal_id"
+      ],
+      "title": "KnowledgeItem",
+      "type": "object"
+    },
+    "KnowledgeStep": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "knowledge",
+          "default": "knowledge",
+          "title": "Type",
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/KnowledgeItem"
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "KnowledgeStep",
+      "type": "object"
+    },
+    "LearningGoal": {
+      "additionalProperties": false,
+      "description": "A learning outcome that can be checked.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "LearningGoal",
+      "type": "object"
+    },
+    "MediaItem": {
+      "additionalProperties": false,
+      "description": "A video or image file shipped inside the offline game package.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MediaKind"
+        },
+        "src": {
+          "minLength": 1,
+          "title": "Src",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Seconds"
+        },
+        "captions": {
+          "default": false,
+          "title": "Captions",
+          "type": "boolean"
+        },
+        "narration": {
+          "default": false,
+          "title": "Narration",
+          "type": "boolean"
+        },
+        "version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "src"
+      ],
+      "title": "MediaItem",
+      "type": "object"
+    },
+    "MediaKind": {
+      "enum": [
+        "video",
+        "image"
+      ],
+      "title": "MediaKind",
+      "type": "string"
+    },
+    "MediaStep": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "media",
+          "default": "media",
+          "title": "Type",
+          "type": "string"
+        },
+        "media_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Media Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_id"
+      ],
+      "title": "MediaStep",
+      "type": "object"
+    },
+    "Mode": {
+      "description": "How the session is used (REQUIREMENTS section 4).",
+      "enum": [
+        "learning",
+        "review"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "description": "A multiple-choice question: four answers, exactly one correct, with a rationale.\n\n\"Exactly one correct\" holds by construction: the model stores a single index.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "answers": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Answers",
+          "type": "array"
+        },
+        "correct_index": {
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Correct Index",
+          "type": "integer"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "difficulty": {
+          "$ref": "#/$defs/Difficulty",
+          "default": "medium"
+        },
+        "tags": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "answers",
+        "correct_index",
+        "rationale"
+      ],
+      "title": "Question",
+      "type": "object"
+    },
+    "QuestionStep": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "question",
+          "default": "question",
+          "title": "Type",
+          "type": "string"
+        },
+        "question": {
+          "$ref": "#/$defs/Question"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "QuestionStep",
+      "type": "object"
+    },
+    "Station": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/StationKind"
+        },
+        "duration_minutes": {
+          "minimum": 1,
+          "title": "Duration Minutes",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "anchor": "#/$defs/AnchorStep",
+                "knowledge": "#/$defs/KnowledgeStep",
+                "media": "#/$defs/MediaStep",
+                "question": "#/$defs/QuestionStep"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/KnowledgeStep"
+              },
+              {
+                "$ref": "#/$defs/QuestionStep"
+              },
+              {
+                "$ref": "#/$defs/MediaStep"
+              },
+              {
+                "$ref": "#/$defs/AnchorStep"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "duration_minutes",
+        "steps"
+      ],
+      "title": "Station",
+      "type": "object"
+    },
+    "StationKind": {
+      "description": "The seven stations, in their fixed order.",
+      "enum": [
+        "spark",
+        "discover",
+        "retrieve",
+        "connect",
+        "crack",
+        "championship",
+        "seal"
+      ],
+      "title": "StationKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A complete game: identity card, key ideas and seven stations.",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "status": {
+      "$ref": "#/$defs/ApprovalStatus",
+      "default": "draft"
+    },
+    "identity": {
+      "$ref": "#/$defs/IdentityCard"
+    },
+    "key_ideas": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 3,
+      "title": "Key Ideas",
+      "type": "array"
+    },
+    "anchor_question": {
+      "$ref": "#/$defs/Question"
+    },
+    "media": {
+      "items": {
+        "$ref": "#/$defs/MediaItem"
+      },
+      "title": "Media",
+      "type": "array"
+    },
+    "stations": {
+      "items": {
+        "$ref": "#/$defs/Station"
+      },
+      "maxItems": 7,
+      "minItems": 7,
+      "title": "Stations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "title",
+    "identity",
+    "key_ideas",
+    "anchor_question",
+    "stations"
+  ],
+  "title": "Game",
+  "type": "object"
+}
