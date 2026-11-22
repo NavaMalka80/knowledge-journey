@@ -43,9 +43,7 @@ cd knowledge-journey
 git fetch origin
 ```
 
-## שלב 3: לבחור ענף
-
-אם ה-Pull Request של שלב 1 כבר מוזג, עובדים על `main`:
+## שלב 3: לעבור לענף הראשי ולעדכן
 
 ```bash
 git checkout main
@@ -55,11 +53,7 @@ git checkout main
 git pull
 ```
 
-אם הוא עוד לא מוזג, הקוד נמצא בענף של השלב:
-
-```bash
-git checkout claude/stoic-hawking-1r4se6
-```
+`main` מכיל את כל השלבים שכבר מוזגו.
 
 ## שלב 4: להתקין את התלויות
 
