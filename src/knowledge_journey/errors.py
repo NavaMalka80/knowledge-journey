@@ -17,8 +17,6 @@ _MESSAGES: dict[str, str] = {
     "list_type": "צריך להיות רשימה",
     "enum": "ערך לא מוכר. הערכים האפשריים: {expected}",
     "literal_error": "ערך לא מוכר. הערכים האפשריים: {expected}",
-    "union_tag_invalid": "סוג שלב לא מוכר. הסוגים האפשריים: {expected_tags}",
-    "union_tag_not_found": "לשלב חסר השדה type",
     "greater_than_equal": "צריך להיות לפחות {ge}",
     "less_than_equal": "צריך להיות לכל היותר {le}",
 }
@@ -41,19 +39,6 @@ def format_location(loc: tuple[int | str, ...]) -> str:
         else:
             out += f".{part}" if out else part
     return out
-
-
-def _drop_union_tags(loc: tuple[int | str, ...]) -> tuple[int | str, ...]:
-    """Remove the step-type tag Pydantic inserts after ``steps[i]``.
-
-    ``stations[3].steps[1].question.question.text`` -> ``...steps[1].question.text``.
-    """
-    out: list[int | str] = []
-    for i, part in enumerate(loc):
-        if i >= 2 and loc[i - 2] == "steps" and isinstance(loc[i - 1], int):
-            continue
-        out.append(part)
-    return tuple(out)
 
 
 def message(error: ErrorDetails) -> str:
@@ -80,7 +65,7 @@ def format_errors(exc: ValidationError) -> list[str]:
     """One readable line per error: ``where: what``."""
     lines = []
     for error in exc.errors():
-        where = format_location(_drop_union_tags(error["loc"]))
+        where = format_location(error["loc"])
         text = message(error)
         lines.append(f"{where}: {text}" if where else text)
     return lines

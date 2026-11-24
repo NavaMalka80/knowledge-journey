@@ -13,13 +13,13 @@ from knowledge_journey.schema import render_schema
 
 def test_validate_accepts_the_sample(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["validate", str(SAMPLE_PATH)]) == EXIT_OK
-    assert "תקין (17 שאלות)" in capsys.readouterr().out
+    assert "תקין (27 שאלות)" in capsys.readouterr().out
 
 
 def test_validate_lists_every_problem(
     tmp_path: Path, game_data: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    game_data["anchor_question"]["answers"].pop()
+    game_data["anchor_question"]["answers"].append("חמישית")
     del game_data["title"]
     path = tmp_path / "game.json"
     path.write_text(json.dumps(game_data, ensure_ascii=False), encoding="utf-8")
@@ -28,7 +28,7 @@ def test_validate_lists_every_problem(
     err = capsys.readouterr().err
     assert "נמצאו 2 בעיות" in err
     assert "title: שדה חובה חסר" in err
-    assert "anchor_question.answers: צריכים להיות לפחות 4 פריטים, ויש 3" in err
+    assert "anchor_question.answers: צריכים להיות לכל היותר 4 פריטים, ויש 5" in err
 
 
 def test_validate_reports_broken_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
