@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מסע הידע: הדגמת מפת המסע</title>
+<!--
+  Visual prototype of the journey map (ADR 0005).
+  One self-contained file: no network, no dependencies, works from file://.
+  Everything is drawn in a single 1600x900 SVG, so it scales evenly to any 16:9 projector.
+  The theme ("skin") only changes the scenery and the palette; stations and layout stay fixed.
+-->
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #1f2a33; }
+  body {
+    display: grid; place-items: center;
+    font-family: "Rubik", "Heebo", "Assistant", "Arial", "Liberation Sans", sans-serif;
+  }
+  .stage { width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; }
+  .stage svg { display: block; width: 100%; height: 100%; }
+  .stage text { font-family: inherit; }
+
+  .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 1.8s ease-out infinite; }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .8; } 100% { transform: scale(1.6); opacity: 0; } }
+  .bob { animation: bob 2.4s ease-in-out infinite; }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  .drift { animation: drift 40s linear infinite alternate; }
+  .spin { animation: spin 6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes drift { from { transform: translateX(-30px); } to { transform: translateX(30px); } }
+  @media (prefers-reduced-motion: reduce) { .pulse, .bob, .drift, .spin { animation: none; } }
+
+  /* Demo-only controls (not part of the classroom screen). */
+  .controls {
+    position: fixed; inset-inline-start: 12px; bottom: 12px; display: flex; gap: 6px; flex-wrap: wrap;
+    background: rgba(255,255,255,.92); padding: 8px; border-radius: 12px; font-size: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  }
+  .controls button {
+    font: inherit; border: 1px solid #b9c3cc; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .controls button[aria-pressed="true"] { background: #23384a; color: #fff; border-color: #23384a; }
+  .hide-controls .controls { display: none; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+
+<div class="controls" role="toolbar" aria-label="פקדי הדגמה">
+  <span style="align-self:center">ערכה:</span>
+  <span id="theme-buttons" style="display:flex;gap:6px"></span>
+  <span style="align-self:center;margin-inline-start:8px">תחנה נוכחית:</span>
+  <button id="prev" type="button" aria-label="תחנה קודמת">→</button>
+  <button id="next" type="button" aria-label="תחנה הבאה">←</button>
+</div>
+
+<script>
+"use strict";
+
+// ------------------------------------------------------------------ fixed template
+
+const STATIONS = [
+  { n: 1, name: "הניצוץ", note: "סרטון ושאלת עוגן", icon: "spark" },
+  { n: 2, name: "מגלים", note: "שלושה מפתחות ידע", icon: "key" },
+  { n: 3, name: "שולפים", note: "שש משימות", icon: "cards" },
+  { n: 4, name: "מחברים", note: "מקרה ושתי הכרעות", icon: "fork" },
+  { n: 5, name: "מפצחים", note: "ארבעה מנעולים", icon: "lock" },
+  { n: 6, name: "אליפות הידע", note: "שלושה סבבים", icon: "trophy" },
+  { n: 7, name: "חותם הידע", note: "עוגן, העברה ומפה", icon: "seal" },
+];
+
+// Station positions: right to left (Hebrew reading order), alternating high and low.
+const POS = [
+  { x: 1440, y: 330 }, { x: 1230, y: 560 }, { x: 1020, y: 330 }, { x: 810, y: 560 },
+  { x: 600, y: 330 }, { x: 390, y: 560 }, { x: 180, y: 330 },
+];
+
+// Free pockets for scenery, away from the road and the cards.
+const POCKET = {
+  sky: [{ x: 1230, y: 205 }, { x: 810, y: 205 }, { x: 390, y: 205 }],         // between the upper cards
+  midTop: POS.filter((_, i) => i % 2 === 0).map(p => ({ x: p.x, y: 470 })),  // under upper stations
+  midLow: POS.filter((_, i) => i % 2 === 1).map(p => ({ x: p.x, y: 425 })),  // above lower stations
+  floor: POS.filter((_, i) => i % 2 === 0).map(p => ({ x: p.x, y: 700 })),   // between the lower cards
+};
+
+// ------------------------------------------------------------------ themes ("skins")
+
+const THEMES = {
+  city: {
+    name: "עיר ירוקה",
+    sky: ["#cfe6f5", "#eef6f0"], ground: "#d4eac3", groundDark: "#bfdcab",
+    road: "#f3f4f6", roadEdge: "#9aa7b1", dash: "#c3ccd3",
+    accent: "#5b4bb7", accentSoft: "#e6e2f6", ink: "#2a2450",
+    scenery: (t) => cityScenery(t),
+  },
+  forest: {
+    name: "הרים ויער",
+    sky: ["#cfe8f3", "#eef7ea"], ground: "#cfe5b5", groundDark: "#b7d79a",
+    road: "#f6f1e3", roadEdge: "#8dbf6a", dash: "#cdbf9e",
+    accent: "#2f7d4f", accentSoft: "#dff0e3", ink: "#1f3a2b",
+    scenery: forestScenery,
+  },
+  beach: {
+    name: "ים וחוף",
+    sky: ["#bfe4f6", "#fdf4de"], ground: "#f4e3b9", groundDark: "#ead39c",
+    road: "#fffaf0", roadEdge: "#e2c27f", dash: "#d9c49a",
+    accent: "#1f6f99", accentSoft: "#dcecf5", ink: "#173447",
+    scenery: beachScenery,
+  },
+  desert: {
+    name: "מדבר ונווה",
+    sky: ["#f9dcb4", "#fdf1dc"], ground: "#f1d29f", groundDark: "#e6bf84",
+    road: "#fbf3e2", roadEdge: "#d9a35f", dash: "#d3b48a",
+    accent: "#b8562a", accentSoft: "#f6e1d3", ink: "#4a2a17",
+    scenery: (t) => desertScenery(t),
+  },
+};
+
+// ------------------------------------------------------------------ drawing helpers
+
+const svgNS = "http://www.w3.org/2000/svg";
+
+function roadPath() {
+  // Enter from the right edge, S-curves with horizontal tangents, exit at the left edge.
+  const pts = [{ x: 1640, y: 250 }, ...POS, { x: -40, y: 470 }];
+  let d = `M${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], half = (a.x - b.x) / 2;
+    d += ` C${a.x - half} ${a.y} ${b.x + half} ${b.y} ${b.x} ${b.y}`;
+  }
+  return d;
+}
+
+function cloud(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})" fill="#fff" opacity=".9">
+    <ellipse cx="0" cy="10" rx="46" ry="16"/><circle cx="-16" cy="2" r="18"/><circle cx="12" cy="-4" r="22"/></g>`;
+}
+function bird(x, y, s = 1) {
+  return `<path d="M${x - 10 * s} ${y} q${5 * s} ${-6 * s} ${10 * s} 0 q${5 * s} ${-6 * s} ${10 * s} 0"
+    fill="none" stroke="#55606b" stroke-width="2" stroke-linecap="round"/>`;
+}
+function pine(x, y, s = 1, c = "#3f8f5a") {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <rect x="-4" y="-6" width="8" height="14" fill="#8a6a4a"/>
+    <polygon points="0,-62 -22,-24 -12,-24 -26,-4 26,-4 12,-24 22,-24" fill="${c}"/></g>`;
+}
+function roundTree(x, y, s = 1, c = "#6fb36a") {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <rect x="-4" y="-14" width="8" height="20" rx="2" fill="#8a6a4a"/>
+    <circle cx="0" cy="-30" r="20" fill="${c}"/><circle cx="-7" cy="-36" r="7" fill="#fff" opacity=".18"/></g>`;
+}
+function palm(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <path d="M0 0 C 4 -20, 2 -40, 8 -62" stroke="#a07a4f" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <g fill="#4fa36b">
+      <path d="M8 -62 C -10 -74, -28 -66, -34 -54 C -20 -62, -6 -62, 8 -62z"/>
+      <path d="M8 -62 C 26 -76, 44 -66, 48 -52 C 34 -62, 20 -62, 8 -62z"/>
+      <path d="M8 -62 C 0 -84, 16 -92, 26 -88 C 16 -82, 10 -72, 8 -62z"/>
+      <path d="M8 -62 C -8 -86, -24 -84, -28 -78 C -16 -76, -2 -70, 8 -62z"/>
+    </g><circle cx="6" cy="-58" r="4" fill="#8a5a33"/></g>`;
+}
+function house(x, y, s = 1, wall = "#f2efe8", roof = "#c8553d") {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <rect x="-24" y="-30" width="48" height="30" fill="${wall}" stroke="#d9d2c4"/>
+    <polygon points="-30,-30 0,-52 30,-30" fill="${roof}"/>
+    <rect x="-6" y="-16" width="12" height="16" fill="#8a6a4a"/>
+    <rect x="-18" y="-24" width="9" height="8" fill="#9fd0e8"/><rect x="9" y="-24" width="9" height="8" fill="#9fd0e8"/></g>`;
+}
+
+// ------------------------------------------------------------------ layout: what scenery must avoid
+
+const CARD_W = 214, CARD_H = 96;
+function cardRect(i) {
+  const p = POS[i], upper = i % 2 === 0;
+  return { x: p.x - CARD_W / 2, y: upper ? p.y - 70 - CARD_H - 46 : p.y + 34, w: CARD_W, h: CARD_H };
+}
+
+// Points along the road, sampled from the same curve that roadPath() draws.
+const ROAD_POINTS = (() => {
+  const pts = [{ x: 1640, y: 250 }, ...POS, { x: -40, y: 470 }], out = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], half = (a.x - b.x) / 2;
+    const c1 = { x: a.x - half, y: a.y }, c2 = { x: b.x + half, y: b.y };
+    for (let k = 0; k <= 30; k++) {
+      const t = k / 30, u = 1 - t;
+      out.push({
+        x: u * u * u * a.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * b.x,
+        y: u * u * u * a.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * b.y,
+      });
+    }
+  }
+  return out;
+})();
+
+function blocked(x, y, extra = []) {
+  if (ROAD_POINTS.some(p => (p.x - x) ** 2 + (p.y - y) ** 2 < 62 ** 2)) return true;
+  const boxes = [
+    ...POS.map((_, i) => cardRect(i)),
+    ...POS.map(p => ({ x: p.x - 40, y: p.y - 95, w: 80, h: 110 })),       // pins
+    { x: 545, y: 825, w: 510, h: 75 },                                     // footer
+    ...extra,
+  ];
+  return boxes.some(b => x > b.x - 14 && x < b.x + b.w + 14 && y > b.y - 14 && y < b.y + b.h + 14);
+}
+
+// Deterministic pseudo-random numbers: the same scenery on every render.
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+}
+
+// Scatter small details over the free ground, sorted top to bottom for depth.
+function scatter(drawers, count, seed, keepOut) {
+  const rand = rng(seed), items = [];
+  for (let tries = 0; items.length < count && tries < count * 40; tries++) {
+    const x = 20 + rand() * 1560, y = 275 + rand() * 545;
+    if (blocked(x, y, keepOut)) continue;
+    if (items.some(it => (it.x - x) ** 2 + (it.y - y) ** 2 < 34 ** 2)) continue;
+    items.push({ x, y, k: Math.floor(rand() * drawers.length), s: 0.8 + rand() * 0.5 });
+  }
+  return items.sort((a, b) => a.y - b.y).map(it => drawers[it.k](it.x, it.y, it.s)).join("");
+}
+
+// ------------------------------------------------------------------ small details
+
+const tuft = (c) => (x, y, s) => `<path transform="translate(${x} ${y}) scale(${s})"
+  d="M-8 0 Q-7 -9 -10 -14 M-3 0 Q-2 -12 0 -18 M3 0 Q4 -10 9 -14 M7 0 Q8 -6 12 -9" stroke="${c}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`;
+const flowers = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  ${tuft("#7fb069")(0, 2, 0.8)}<circle cx="-6" cy="-10" r="3.5" fill="#f2a7c3"/><circle cx="2" cy="-14" r="3.5" fill="#ffd45e"/>
+  <circle cx="8" cy="-8" r="3.5" fill="#ffffff"/><circle cx="2" cy="-14" r="1.3" fill="#d9822b"/></g>`;
+const bush = (c1, c2) => (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <ellipse cx="0" cy="2" rx="22" ry="5" fill="#000" opacity=".08"/>
+  <circle cx="-11" cy="-8" r="11" fill="${c1}"/><circle cx="10" cy="-8" r="12" fill="${c1}"/><circle cx="0" cy="-15" r="13" fill="${c2}"/></g>`;
+const rock = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <path d="M-16 0 L-12 -11 L-2 -16 L10 -12 L16 0 Z" fill="#a9b1b7"/><path d="M-2 -16 L10 -12 L4 -6 Z" fill="#c7ced3"/></g>`;
+const mushroom = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <rect x="-3" y="-9" width="6" height="9" rx="2" fill="#f4ead6"/><path d="M-10 -8 a10 8 0 0 1 20 0 z" fill="#d9534f"/>
+  <circle cx="-3" cy="-12" r="1.6" fill="#fff"/><circle cx="4" cy="-11" r="1.4" fill="#fff"/></g>`;
+const shell = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <path d="M-9 0 a9 9 0 0 1 18 0 z" fill="#f3b6a1"/><path d="M0 0 L-5 -7 M0 0 L0 -9 M0 0 L5 -7" stroke="#e4917a" stroke-width="1.3"/></g>`;
+const starfish = (x, y, s) => `<polygon transform="translate(${x} ${y - 6}) scale(${s})"
+  points="0,-10 3,-3 10,-3 4,2 6,9 0,5 -6,9 -4,2 -10,-3 -3,-3" fill="#f08a4b"/>`;
+const pebble = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <ellipse cx="-5" cy="-3" rx="6" ry="4" fill="#d8c7a3"/><ellipse cx="5" cy="-2" rx="4" ry="3" fill="#cdb88f"/></g>`;
+
+// ------------------------------------------------------------------ larger props
+
+function cabin(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <g class="drift" opacity=".75"><circle cx="20" cy="-96" r="7" fill="#fff"/><circle cx="28" cy="-110" r="9" fill="#fff"/><circle cx="22" cy="-126" r="11" fill="#fff"/></g>
+    <rect x="14" y="-90" width="12" height="26" fill="#7d5a3c"/>
+    <rect x="-40" y="-44" width="80" height="44" fill="#b7814f"/>
+    ${[-36, -26, -16, -6].map(d => `<line x1="-40" x2="40" y1="${d}" y2="${d}" stroke="#9a6a3e" stroke-width="2"/>`).join("")}
+    <polygon points="-50,-42 0,-82 50,-42" fill="#7a3f2b"/><polygon points="-50,-42 0,-82 0,-74 -40,-42" fill="#8e4b33"/>
+    <rect x="-9" y="-28" width="18" height="28" fill="#5c3b25"/>
+    <rect x="-32" y="-34" width="14" height="12" fill="#ffe29a" stroke="#5c3b25" stroke-width="2"/>
+    <rect x="18" y="-34" width="14" height="12" fill="#ffe29a" stroke="#5c3b25" stroke-width="2"/></g>`;
+}
+function fence(x, y, n = 5) {
+  let s = `<g transform="translate(${x} ${y})">
+    <rect x="0" y="-20" width="${n * 18}" height="4" fill="#b08a5f"/><rect x="0" y="-10" width="${n * 18}" height="4" fill="#b08a5f"/>`;
+  for (let i = 0; i <= n; i++) s += `<rect x="${i * 18 - 3}" y="-28" width="6" height="28" rx="2" fill="#9a7650"/>`;
+  return s + "</g>";
+}
+function signpost(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-3" y="-56" width="6" height="56" fill="#8a6a4a"/>
+    <path d="M-34 -52 H22 L32 -44 L22 -36 H-34 Z" fill="#c99a63"/><path d="M34 -30 H-22 L-32 -22 L-22 -14 H34 Z" fill="#b8874f"/></g>`;
+}
+function deer(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})" fill="#b97a45">
+    <ellipse cx="0" cy="-22" rx="20" ry="10"/><rect x="-16" y="-16" width="4" height="16"/><rect x="-8" y="-16" width="4" height="16"/>
+    <rect x="6" y="-16" width="4" height="16"/><rect x="13" y="-16" width="4" height="16"/>
+    <path d="M14 -28 L24 -44 L30 -40 L22 -26 Z"/><ellipse cx="29" cy="-44" rx="7" ry="5"/>
+    <path d="M27 -49 l-3 -9 M27 -52 l-6 -3 M31 -49 l3 -9 M31 -53 l6 -3" stroke="#8a5a33" stroke-width="2" fill="none"/>
+    <circle cx="-4" cy="-24" r="2" fill="#f5e6d0"/><circle cx="6" cy="-20" r="2" fill="#f5e6d0"/><circle cx="31" cy="-45" r="1.3" fill="#2b2b2b"/></g>`;
+}
+function rabbit(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})" fill="#d9cfc3">
+    <ellipse cx="0" cy="-8" rx="11" ry="8"/><circle cx="10" cy="-15" r="6"/>
+    <ellipse cx="8" cy="-27" rx="2.5" ry="8"/><ellipse cx="13" cy="-27" rx="2.5" ry="8"/>
+    <circle cx="-11" cy="-9" r="3.5" fill="#fff"/><circle cx="12" cy="-16" r="1.2" fill="#2b2b2b"/></g>`;
+}
+function balloon(x, y) {
+  return `<g class="bob" style="transform-origin:${x}px ${y}px"><g transform="translate(${x} ${y})">
+    <path d="M0 -40 C 26 -40, 30 -10, 6 14 L-6 14 C -30 -10, -26 -40, 0 -40 Z" fill="#e9634f"/>
+    <path d="M0 -40 C 10 -40, 12 -10, 3 14 L-3 14 C -12 -10, -10 -40, 0 -40 Z" fill="#ffd45e"/>
+    <path d="M-6 14 L-5 24 M6 14 L5 24" stroke="#7a6a58" stroke-width="1.5"/><rect x="-7" y="24" width="14" height="10" rx="2" fill="#9a6a3e"/></g></g>`;
+}
+function logs(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    ${[[-16, -8], [8, -8], [-4, -26]].map(([lx, ly]) => `<rect x="${lx - 22}" y="${ly}" width="44" height="16" rx="8" fill="#9a6a3e"/>
+      <circle cx="${lx + 22}" cy="${ly + 8}" r="8" fill="#d9b47e"/><circle cx="${lx + 22}" cy="${ly + 8}" r="4" fill="none" stroke="#b08a5f"/>`).join("")}</g>`;
+}
+function treeLine(y, c) {
+  let s = "";
+  for (let x = 0; x <= 1600; x += 26) s += `<circle cx="${x}" cy="${y + ((x * 7) % 9)}" r="${16 + ((x * 3) % 7)}" fill="${c}"/>`;
+  return s;
+}
+function mountain(x, base, w, h, c) {
+  const peak = { x: x, y: base - h };
+  return `<path d="M${x - w / 2} ${base} L${peak.x} ${peak.y} L${x + w / 2} ${base} Z" fill="${c}"/>
+    <path d="M${peak.x - w * 0.12} ${peak.y + h * 0.24} L${peak.x} ${peak.y} L${peak.x + w * 0.12} ${peak.y + h * 0.24}
+      L${peak.x + w * 0.05} ${peak.y + h * 0.19} L${peak.x} ${peak.y + h * 0.26} L${peak.x - w * 0.05} ${peak.y + h * 0.19} Z" fill="#fff"/>`;
+}
+
+// ------------------------------------------------------------------ scenery per theme
+
+function forestScenery(t) {
+  const sky = `<g class="drift">${cloud(700, 70, 1)}${cloud(1080, 50, .8)}${cloud(260, 95, .7)}${cloud(1450, 105, .6)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="62" r="34" fill="#f7c95c"/>
+    ${bird(860, 110)}${bird(890, 100, .8)}${bird(1250, 95, .9)}${bird(560, 85, .7)}
+    ${balloon(1230, 150)}`;
+  const mountains = [
+    mountain(120, 250, 300, 150, "#a9cfc2"), mountain(330, 250, 340, 175, "#94c2b4"), mountain(560, 250, 280, 130, "#b6d7cc"),
+    mountain(820, 250, 320, 120, "#a9cfc2"), mountain(1060, 250, 300, 150, "#94c2b4"), mountain(1290, 250, 340, 165, "#a9cfc2"),
+    mountain(1520, 250, 300, 140, "#b6d7cc"),
+  ].join("");
+  const ground = `<path d="M0 240 C 300 210, 600 260, 900 235 S 1400 215, 1600 240 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 820 C 300 790, 700 840, 1000 810 S 1450 800, 1600 820 L1600 900 L0 900 Z" fill="${t.groundDark}"/>`;
+  const lake = `<g transform="translate(1020 720)">
+      <ellipse rx="96" ry="36" fill="#8fcbe3"/><ellipse rx="74" ry="24" fill="#a9d9ec"/>
+      <path d="M-40 -2 q8 -6 16 0 q8 6 16 0 M10 10 q8 -6 16 0 q8 6 16 0" stroke="#fff" stroke-width="2" fill="none"/>
+      <path d="M-18 4 q10 -8 20 0 q-10 8 -20 0z M2 4 l8 -6 v12z" fill="#e48a3b"/>
+      <path d="M-70 -20 l0 -18 M-64 -18 l0 -14 M-58 -20 l0 -20" stroke="#5f8f4e" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="-70" cy="-40" rx="3" ry="7" fill="#8a5a33"/><ellipse cx="-58" cy="-42" rx="3" ry="7" fill="#8a5a33"/></g>`;
+  const pines = [
+    pine(POCKET.midTop[0].x - 30, 520, 1.0), pine(POCKET.midTop[0].x + 20, 530, 1.2, "#2f7d4f"),
+    pine(POCKET.midTop[1].x - 50, 525, 0.9), pine(POCKET.midTop[2].x + 10, 528, 1.15, "#2f7d4f"),
+    pine(POCKET.midTop[2].x - 40, 520, 0.9), pine(POCKET.midTop[3].x + 15, 525, 1.1),
+    pine(POCKET.midLow[0].x + 35, 470, 1.0, "#2f7d4f"), pine(POCKET.midLow[1].x - 30, 470, 1.1),
+    pine(POCKET.midLow[2].x + 30, 470, 1.0, "#2f7d4f"),
+  ].join("");
+  const props = [
+    roundTree(1360, 800, 1.1), roundTree(1545, 760, 0.9, "#5ea05a"),
+    roundTree(570, 790, 1.0), roundTree(640, 800, 1.2, "#5ea05a"),
+    roundTree(150, 790, 1.1, "#5ea05a"), roundTree(225, 800, 0.9),
+    cabin(1500, 620), fence(1420, 650, 4), signpost(1555, 470),
+    house(1440, 800, 1.0, "#f2efe8", "#a7563a"),
+    deer(1170, 785, 0.9), rabbit(300, 805), rabbit(330, 812, 0.8), logs(700, 805),
+  ].join("");
+  const keepOut = [
+    { x: 920, y: 680, w: 210, h: 80 }, { x: 1440, y: 480, w: 160, h: 180 }, { x: 1520, y: 400, w: 80, h: 80 },
+    { x: 1320, y: 740, w: 240, h: 80 }, { x: 530, y: 740, w: 220, h: 80 }, { x: 110, y: 740, w: 250, h: 80 },
+    { x: 1120, y: 720, w: 90, h: 70 },
+  ];
+  const details = scatter([tuft("#7fb069"), tuft("#6aa35a"), flowers, flowers, bush("#6fae5f", "#82be6e"), rock, mushroom],
+    70, 7, keepOut);
+  return `${sky}${mountains}${treeLine(244, "#7db58f")}${ground}${lake}${details}${pines}${props}`;
+}
+
+function beachScenery(t) {
+  const sea = `<path d="M0 150 L1600 150 L1600 245 C 1300 270, 1000 230, 700 255 S 200 240, 0 250 Z" fill="#7cc3e0"/>
+    <path d="M0 150 L1600 150 L1600 175 L0 175 Z" fill="#a9daee"/>
+    ${[200, 520, 860, 1180, 1480, 60, 680, 1330].map((x, i) => `<path d="M${x} ${200 + (i % 3) * 12} q12 -8 24 0 q12 8 24 0" stroke="#fff" stroke-width="2.5" fill="none" opacity=".8"/>`).join("")}`;
+  const boat = (x, y, s, c = "#c8553d") => `<g class="bob" style="transform-origin:${x}px ${y}px"><g transform="translate(${x} ${y}) scale(${s})">
+      <path d="M-30 0 L30 0 L20 12 L-20 12 Z" fill="${c}"/>
+      <path d="M0 -2 L0 -50 L26 -6 Z" fill="#fff"/><path d="M-2 -6 L-2 -44 L-22 -6 Z" fill="#f3d27a"/></g></g>`;
+  const fish = (x, y) => `<path d="M${x} ${y} q10 -8 20 0 q-10 8 -20 0z M${x + 20} ${y} l8 -6 v12z" fill="#f08a4b"/>`;
+  const dolphin = (x, y) => `<g transform="translate(${x} ${y})">
+      <path d="M-26 6 C -16 -18, 14 -22, 26 -4 C 18 -8, 8 -8, 2 -4 L6 4 L-2 0 C -10 2, -18 6, -26 6 Z" fill="#5c8fb0"/>
+      <path d="M-4 -14 L2 -24 L6 -12 Z" fill="#5c8fb0"/><circle cx="18" cy="-8" r="1.5" fill="#1d2f3d"/>
+      <path d="M-34 14 q6 -5 12 0 q6 5 12 0" stroke="#fff" stroke-width="2" fill="none"/></g>`;
+  const buoy = (x, y) => `<g class="bob" style="transform-origin:${x}px ${y}px"><g transform="translate(${x} ${y})">
+      <path d="M-8 0 L8 0 L5 -16 L-5 -16 Z" fill="#e9634f"/><rect x="-6" y="-10" width="12" height="4" fill="#fff"/></g></g>`;
+  const foam = (() => {
+    let d = "";
+    for (let x = 0; x <= 1600; x += 28) {
+      const y = 247 + 6 * Math.sin(x / 140);
+      d += `<circle cx="${x}" cy="${y}" r="6" fill="#fff" opacity=".7"/>`;
+    }
+    return d;
+  })();
+  const pier = `<g transform="translate(${POCKET.sky[1].x} 0)">
+      ${[176, 200, 224].map(y => `<rect x="-17" y="${y}" width="6" height="18" fill="#7a5a3c"/><rect x="11" y="${y}" width="6" height="18" fill="#7a5a3c"/>`).join("")}
+      <rect x="-16" y="168" width="32" height="88" fill="#c99a63"/>
+      ${[176, 188, 200, 212, 224, 236, 248].map(y => `<line x1="-16" x2="16" y1="${y}" y2="${y}" stroke="#a97c4c" stroke-width="2"/>`).join("")}</g>`;
+  const ground = `<path d="M0 248 C 200 238, 500 262, 700 255 S 1300 268, 1600 245 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 800 C 400 780, 900 830, 1600 800 L1600 900 L0 900 Z" fill="${t.groundDark}"/>
+    <path d="M-20 820 C 40 740, 120 740, 190 820 Z" fill="#ecd59f"/><path d="M1480 840 C 1520 770, 1600 770, 1640 840 Z" fill="#ecd59f"/>`;
+  const lighthouse = `<g transform="translate(${POCKET.sky[0].x} 246)">
+      <polygon points="-16,0 16,0 10,-92 -10,-92" fill="#fff" stroke="#e1d6c2"/>
+      <rect x="-15" y="-30" width="30" height="12" fill="#d0473b"/><rect x="-12" y="-66" width="24" height="12" fill="#d0473b"/>
+      <rect x="-12" y="-110" width="24" height="18" fill="#3a556b"/><rect x="-8" y="-106" width="16" height="10" fill="#ffd866"/>
+      <polygon points="-16,-110 16,-110 0,-124" fill="#d0473b"/></g>`;
+  const umbrella = (x, y, c) => `<g transform="translate(${x} ${y})">
+      <ellipse cx="2" cy="2" rx="24" ry="5" fill="#000" opacity=".08"/>
+      <line x1="0" y1="0" x2="4" y2="-46" stroke="#7a6a58" stroke-width="3"/>
+      <path d="M-30 -40 Q4 -78 38 -52 Z" fill="${c}"/><path d="M-30 -40 Q-6 -56 4 -46 Q18 -60 38 -52" fill="none" stroke="#fff" stroke-width="2"/>
+      <rect x="-28" y="-4" width="26" height="6" rx="2" fill="${c}" opacity=".7"/></g>`;
+  const hut = (x, y, c) => `<g transform="translate(${x} ${y})">
+      <rect x="-20" y="-40" width="40" height="40" fill="${c}"/>
+      ${[-12, -4, 4, 12].map(d => `<line x1="${d}" x2="${d}" y1="-40" y2="0" stroke="#fff" stroke-width="2" opacity=".5"/>`).join("")}
+      <polygon points="-26,-40 0,-58 26,-40" fill="#fff"/><rect x="-7" y="-24" width="14" height="24" fill="#7a5a3c"/></g>`;
+  const tower = (x, y) => `<g transform="translate(${x} ${y})">
+      <path d="M-22 0 L-12 -60 M22 0 L12 -60 M-18 -24 L18 -24 M-15 -42 L15 -42" stroke="#c9a46f" stroke-width="5" fill="none"/>
+      <rect x="-24" y="-82" width="48" height="24" fill="#e9634f"/><rect x="-18" y="-76" width="36" height="10" fill="#fff"/>
+      <polygon points="-30,-82 0,-100 30,-82" fill="#fff"/><rect x="18" y="-120" width="3" height="40" fill="#7a6a58"/>
+      <path d="M21 -120 L40 -113 L21 -106 Z" fill="#e9634f"/></g>`;
+  const castle = (x, y) => `<g transform="translate(${x} ${y})" fill="#e2c27f">
+      <rect x="-26" y="-20" width="52" height="20"/><rect x="-30" y="-36" width="16" height="36"/><rect x="14" y="-36" width="16" height="36"/>
+      <rect x="-10" y="-46" width="20" height="46"/><path d="M-30 -36 v-5 h4 v5 h4 v-5 h4 v5 h4 v-5" stroke="#e2c27f"/>
+      <rect x="-4" y="-12" width="8" height="12" fill="#c9a46f"/><line x1="0" y1="-46" x2="0" y2="-64" stroke="#7a6a58" stroke-width="2"/>
+      <path d="M0 -64 L14 -59 L0 -54 Z" fill="#3f9bd0"/></g>`;
+  const crab = (x, y) => `<g transform="translate(${x} ${y})" fill="#e05a43">
+      <ellipse cx="0" cy="-8" rx="14" ry="9"/><path d="M-12 -4 l-8 6 M-10 -2 l-6 8 M12 -4 l8 6 M10 -2 l6 8" stroke="#e05a43" stroke-width="2.5"/>
+      <circle cx="-20" cy="-18" r="6"/><circle cx="20" cy="-18" r="6"/><circle cx="-5" cy="-16" r="2.5" fill="#fff"/><circle cx="5" cy="-16" r="2.5" fill="#fff"/></g>`;
+  const turtle = (x, y) => `<g transform="translate(${x} ${y})">
+      <ellipse cx="0" cy="0" rx="16" ry="11" fill="#5e9a5a"/><ellipse cx="0" cy="0" rx="9" ry="6" fill="#7fb576"/>
+      <circle cx="19" cy="-2" r="5" fill="#8fbf6e"/><ellipse cx="-10" cy="10" rx="4" ry="3" fill="#8fbf6e"/><ellipse cx="10" cy="10" rx="4" ry="3" fill="#8fbf6e"/></g>`;
+  const ball = (x, y) => `<g transform="translate(${x} ${y - 12})"><circle r="12" fill="#fff"/>
+      <path d="M0 -12 A12 12 0 0 1 12 0 L0 0 Z" fill="#e9634f"/><path d="M0 12 A12 12 0 0 1 -12 0 L0 0 Z" fill="#3f9bd0"/>
+      <path d="M-12 0 A12 12 0 0 1 0 -12 L0 0 Z" fill="#ffd45e"/></g>`;
+  const lagoon = `<g transform="translate(600 720)"><ellipse rx="100" ry="36" fill="#8fd0e6"/><ellipse rx="76" ry="24" fill="#b0e1f0"/>
+      ${fish(-40, -4)}${fish(14, 10)}${turtle(40, -6)}</g>`;
+  const sky = `<g class="drift">${cloud(560, 70, .9)}${cloud(1000, 55, .75)}${cloud(220, 95, .7)}${cloud(1450, 100, .6)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="62" r="36" fill="#ffcf5c"/>
+    ${bird(820, 105)}${bird(850, 95, .8)}${bird(1150, 120, .9)}${bird(640, 120, .7)}${bird(1400, 92, .8)}`;
+  const palms = [
+    palm(POCKET.midTop[0].x - 20, 545, 1.0), palm(POCKET.midTop[1].x + 25, 545, 1.15),
+    palm(POCKET.midTop[2].x - 30, 545, 1.0), palm(POCKET.midTop[3].x + 20, 545, 1.1),
+    palm(POCKET.midLow[0].x + 30, 480, .9), palm(POCKET.midLow[2].x - 25, 480, .95),
+    palm(1565, 745, 1.0), palm(1525, 760, 0.8),
+  ].join("");
+  const props = [
+    hut(1370, 800, "#3f9bd0"), hut(1420, 805, "#f2b33d"), hut(1470, 800, "#e9634f"),
+    tower(1540, 560), umbrella(1010, 795, "#f2b33d"), umbrella(180, 800, "#3f9bd0"), umbrella(250, 810, "#e9634f"),
+    castle(700, 805), crab(1110, 790), ball(320, 815),
+  ].join("");
+  const keepOut = [
+    { x: 490, y: 680, w: 220, h: 80 }, { x: 1330, y: 740, w: 170, h: 80 }, { x: 1490, y: 400, w: 110, h: 380 },
+    { x: 960, y: 730, w: 100, h: 80 }, { x: 140, y: 740, w: 200, h: 80 }, { x: 660, y: 740, w: 90, h: 80 },
+    { x: 1080, y: 760, w: 60, h: 40 },
+  ];
+  const details = scatter([shell, shell, starfish, pebble, tuft("#b9b36a"), tuft("#a8a85c")], 60, 11, keepOut);
+  return `${sky}${sea}${dolphin(390, 228)}${boat(470, 205, .9)}${boat(1060, 200, .7, "#3f9bd0")}${boat(40, 210, .6)}
+    ${buoy(760, 236)}${buoy(1180, 238)}${fish(700, 225)}${pier}${ground}${foam}${lighthouse}${lagoon}${details}${palms}${props}`;
+}
+
+// ------------------------------------------------------------------ green city
+
+function building(x, y, w, h, c, win = "#bfe3f2") {
+  let s = `<g transform="translate(${x} ${y})"><rect x="${-w / 2}" y="${-h}" width="${w}" height="${h}" fill="${c}"/>
+    <rect x="${-w / 2 - 3}" y="${-h - 6}" width="${w + 6}" height="6" fill="#00000022"/>`;
+  for (let fy = -h + 12; fy < -18; fy += 18)
+    for (let fx = -w / 2 + 8; fx < w / 2 - 8; fx += 16) s += `<rect x="${fx}" y="${fy}" width="9" height="10" fill="${win}"/>`;
+  return s + `<rect x="-7" y="-16" width="14" height="16" fill="#6b5a48"/></g>`;
+}
+function turbine(x, y, h, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <polygon points="-3,0 3,0 1.5,${-h} -1.5,${-h}" fill="#f2f4f5" stroke="#cfd6da"/>
+    <g transform="translate(0 ${-h})"><g class="spin">
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da"/>
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da" transform="rotate(120)"/>
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da" transform="rotate(240)"/></g>
+      <circle r="4" fill="#cfd6da"/></g></g>`;
+}
+function lamp(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-2" y="-52" width="4" height="52" fill="#56636e"/>
+    <path d="M-2 -52 q0 -8 10 -8 h6" stroke="#56636e" stroke-width="3" fill="none"/><ellipse cx="15" cy="-58" rx="6" ry="4" fill="#ffe08a"/></g>`;
+}
+function bench(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-24" y="-18" width="48" height="5" rx="2" fill="#b07a4a"/>
+    <rect x="-24" y="-28" width="48" height="5" rx="2" fill="#b07a4a"/><rect x="-20" y="-13" width="4" height="13" fill="#56636e"/>
+    <rect x="16" y="-13" width="4" height="13" fill="#56636e"/></g>`;
+}
+function trafficLight(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-2" y="-40" width="4" height="40" fill="#56636e"/>
+    <rect x="-9" y="-82" width="18" height="44" rx="6" fill="#3a4650"/>
+    <circle cy="-72" r="5" fill="#e9634f"/><circle cy="-60" r="5" fill="#f2b33d" opacity=".5"/><circle cy="-48" r="5" fill="#5bbf6a" opacity=".5"/></g>`;
+}
+function fountainPark(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse rx="100" ry="38" fill="#9ccf86"/><ellipse rx="62" ry="22" fill="#d6dde2"/><ellipse rx="54" ry="17" fill="#8fd0e6"/>
+    <rect x="-5" y="-30" width="10" height="28" fill="#d6dde2"/><ellipse cy="-30" rx="16" ry="5" fill="#d6dde2"/>
+    <path d="M0 -32 q-14 -18 -24 4 M0 -32 q14 -18 24 4 M0 -32 v-16" stroke="#bfe6f3" stroke-width="3" fill="none" stroke-linecap="round"/>
+    ${duck(-30, 6)}${duck(26, 10, true)}</g>`;
+}
+function duck(x, y, flip = false) {
+  return `<g transform="translate(${x} ${y}) scale(${flip ? -1 : 1} 1)"><ellipse cx="0" cy="0" rx="9" ry="5" fill="#fff"/>
+    <circle cx="7" cy="-6" r="4" fill="#fff"/><path d="M10 -6 l5 1 l-5 2 z" fill="#f2a33d"/><circle cx="8" cy="-7" r="1" fill="#333"/></g>`;
+}
+function skyline(base) {
+  const blocks = [[40, 60, 70], [110, 44, 110], [160, 50, 80], [230, 40, 130], [290, 56, 90], [700, 46, 100], [760, 60, 140],
+    [830, 42, 90], [1120, 50, 120], [1180, 44, 90], [1300, 52, 110], [1370, 40, 150], [1430, 58, 95], [1520, 46, 125]];
+  return blocks.map(([x, w, h]) => `<rect x="${x - w / 2}" y="${base - h}" width="${w}" height="${h}" fill="#b9cfdc"/>
+    ${Array.from({ length: Math.floor(h / 22) }, (_, i) => `<rect x="${x - w / 2 + 8}" y="${base - h + 10 + i * 22}" width="${w - 16}" height="6" fill="#d3e3ec"/>`).join("")}`).join("");
+}
+
+function cityScenery(t) {
+  const sky = `<g class="drift">${cloud(700, 70, 1)}${cloud(1080, 50, .8)}${cloud(240, 95, .7)}${cloud(1460, 100, .6)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="62" r="34" fill="#f7c95c"/>${bird(860, 110)}${bird(890, 100, .8)}${bird(560, 85, .7)}`;
+  const ground = `<path d="M0 240 C 300 225, 600 255, 900 238 S 1400 225, 1600 240 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 820 C 300 800, 700 840, 1000 812 S 1450 805, 1600 820 L1600 900 L0 900 Z" fill="${t.groundDark}"/>`;
+  const turbines = `${turbine(POCKET.sky[0].x - 40, 246, 120, 1)}${turbine(POCKET.sky[0].x + 45, 246, 95, .9)}${turbine(POCKET.sky[1].x, 246, 110, .95)}`;
+  const trees = [
+    roundTree(POCKET.midTop[0].x - 30, 530, 1.1), roundTree(POCKET.midTop[0].x + 25, 540, 0.9, "#5ea05a"),
+    building(POCKET.midTop[1].x - 10, 548, 52, 96, "#f0e6d8"), roundTree(POCKET.midTop[1].x + 42, 540, 0.85), roundTree(POCKET.midTop[2].x + 20, 535, 1.1, "#5ea05a"),
+    building(POCKET.midTop[3].x + 5, 548, 56, 110, "#d9e4ea"), roundTree(POCKET.midTop[3].x - 45, 540, 0.85, "#5ea05a"), roundTree(POCKET.midLow[0].x + 35, 475, 1.0, "#5ea05a"),
+    roundTree(POCKET.midLow[1].x - 30, 475, 1.0), roundTree(POCKET.midLow[2].x + 30, 475, 0.95, "#5ea05a"),
+  ].join("");
+  const props = [
+    building(1380, 810, 60, 120, "#f0e6d8"), building(1450, 812, 54, 90, "#e7d3bd"), building(1515, 808, 58, 140, "#d9e4ea"),
+    house(1560, 640, 1.1, "#f2efe8", "#c8553d"), lamp(1505, 650), trafficLight(1560, 470),
+    house(150, 805, 1.1, "#f2efe8", "#c8553d"), house(235, 810, 0.95, "#f4e3c7", "#5b4bb7"),
+    bench(560, 800), lamp(610, 805), bench(660, 805), roundTree(705, 800, 1.0),
+    fountainPark(1020, 725), lamp(1140, 790),
+  ].join("");
+  const keepOut = [
+    { x: 910, y: 680, w: 240, h: 90 }, { x: 1340, y: 660, w: 220, h: 160 }, { x: 1490, y: 380, w: 110, h: 290 },
+    { x: 110, y: 740, w: 180, h: 80 }, { x: 530, y: 740, w: 200, h: 80 }, { x: 1120, y: 720, w: 50, h: 80 },
+    { x: 970, y: 440, w: 110, h: 110 }, { x: 125, y: 430, w: 110, h: 120 },
+  ];
+  const details = scatter([tuft("#7fb069"), flowers, flowers, bush("#6fae5f", "#82be6e"), bush("#5ea05a", "#76b467")], 60, 5, keepOut);
+  return `${sky}${skyline(246)}${turbines}${ground}${details}${trees}${props}`;
+}
+
+// ------------------------------------------------------------------ desert and oasis
+
+function mesa(x, base, w, h, c) {
+  return `<path d="M${x - w / 2} ${base} L${x - w / 2 + 24} ${base - h} L${x + w / 2 - 24} ${base - h} L${x + w / 2} ${base} Z" fill="${c}"/>
+    <path d="M${x - w / 2 + 24} ${base - h} L${x + w / 2 - 24} ${base - h} L${x + w / 2 - 30} ${base - h + 10} L${x - w / 2 + 30} ${base - h + 10} Z" fill="#fff" opacity=".18"/>`;
+}
+function acacia(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <path d="M0 0 L0 -26 M0 -22 L-14 -36 M0 -24 L12 -38" stroke="#8a6a4a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="-4" cy="-42" rx="34" ry="9" fill="#8fa95a"/><ellipse cx="6" cy="-48" rx="24" ry="7" fill="#a3bb6a"/></g>`;
+}
+function camel(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})" fill="#c99a5f">
+    <path d="M-24 -26 C -22 -44, -8 -44, -4 -32 C 0 -46, 14 -46, 16 -30 L18 -26 Z"/>
+    <rect x="-22" y="-28" width="40" height="12" rx="6"/>
+    <rect x="-20" y="-18" width="4" height="18"/><rect x="-12" y="-18" width="4" height="18"/><rect x="6" y="-18" width="4" height="18"/><rect x="13" y="-18" width="4" height="18"/>
+    <path d="M16 -26 Q 26 -30 26 -44 L32 -46 L34 -40 L30 -40 Q 30 -26 20 -18 Z"/><circle cx="31" cy="-44" r="1.2" fill="#3a2a1a"/></g>`;
+}
+function tent(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <path d="M-60 0 L-46 -40 L46 -40 L60 0 Z" fill="#6b4f3a"/><path d="M-46 -40 L0 -52 L46 -40 Z" fill="#5a412f"/>
+    ${[-34, -14, 6, 26].map(d => `<line x1="${d}" x2="${d + 4}" y1="-40" y2="0" stroke="#e8d5b0" stroke-width="3" opacity=".6"/>`).join("")}
+    <path d="M-12 0 L-6 -26 L6 -26 L12 0 Z" fill="#3e2c20"/>
+    <line x1="-60" y1="0" x2="-74" y2="8" stroke="#8a6a4a" stroke-width="2"/><line x1="60" y1="0" x2="74" y2="8" stroke="#8a6a4a" stroke-width="2"/></g>`;
+}
+function well(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse cy="-4" rx="30" ry="9" fill="#9b8a76"/><rect x="-30" y="-24" width="60" height="20" fill="#c4b29a"/>
+    ${[-30, -15, 0, 15].map(d => `<rect x="${d}" y="-24" width="14" height="9" fill="none" stroke="#a8977f"/>`).join("")}
+    <rect x="-26" y="-62" width="5" height="40" fill="#8a6a4a"/><rect x="21" y="-62" width="5" height="40" fill="#8a6a4a"/>
+    <path d="M-34 -60 L0 -76 L34 -60 Z" fill="#b5653d"/><line x1="0" y1="-60" x2="0" y2="-38" stroke="#5a412f" stroke-width="1.5"/>
+    <rect x="-6" y="-40" width="12" height="10" fill="#8a6a4a"/></g>`;
+}
+function lizard(x, y) {
+  return `<g transform="translate(${x} ${y})" fill="#8a9b4e"><ellipse cx="0" cy="-4" rx="10" ry="4"/><circle cx="11" cy="-5" r="3.5"/>
+    <path d="M-10 -4 q-10 2 -16 -4" stroke="#8a9b4e" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M-5 -1 l-3 5 M5 -1 l3 5 M-5 -7 l-3 -4 M5 -7 l3 -4" stroke="#8a9b4e" stroke-width="2"/></g>`;
+}
+function datePalm(x, y, s = 1) {
+  return `${palm(x, y, s)}<g transform="translate(${x} ${y}) scale(${s})"><circle cx="2" cy="-54" r="3" fill="#c0632b"/><circle cx="9" cy="-53" r="3" fill="#c0632b"/><circle cx="5" cy="-50" r="3" fill="#a5521f"/></g>`;
+}
+function oasis(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse rx="110" ry="42" fill="#b9c77f"/><ellipse rx="86" ry="28" fill="#6fc3d6"/><ellipse rx="64" ry="18" fill="#93d6e4"/>
+    <path d="M-40 -2 q8 -6 16 0 q8 6 16 0 M10 8 q8 -6 16 0 q8 6 16 0" stroke="#fff" stroke-width="2" fill="none"/></g>`;
+}
+const shrub = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <ellipse cx="0" cy="-6" rx="13" ry="7" fill="#a3a35a"/><ellipse cx="6" cy="-10" rx="8" ry="5" fill="#b8b46a"/></g>`;
+const sandRock = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <path d="M-16 0 L-12 -12 L-2 -16 L10 -12 L16 0 Z" fill="#c89b6a"/><path d="M-2 -16 L10 -12 L4 -6 Z" fill="#dcb486"/></g>`;
+const ripple = (x, y, s) => `<path transform="translate(${x} ${y}) scale(${s})" d="M-18 0 q9 -6 18 0 q9 6 18 0" stroke="#e2bd84" stroke-width="2" fill="none"/>`;
+
+function desertScenery(t) {
+  const sky = `<g class="drift">${cloud(700, 70, .8)}${cloud(1460, 100, .55)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="64" r="42" fill="#ffd166"/><circle cx="${POCKET.sky[2].x}" cy="64" r="56" fill="#ffd166" opacity=".25"/>
+    ${bird(860, 110, 1.3)}${bird(1150, 95, 1.1)}`;
+  const back = `${mesa(150, 250, 240, 90, "#d79a68")}${mesa(560, 250, 200, 70, "#e0ab7b")}${mesa(1250, 250, 260, 100, "#d79a68")}${mesa(1500, 250, 180, 70, "#e0ab7b")}
+    <path d="M0 250 C 150 200, 300 205, 450 245 C 600 210, 800 200, 1000 248 C 1150 215, 1350 212, 1600 246 L1600 260 L0 260 Z" fill="#ebc48e"/>`;
+  const ground = `<path d="M0 244 C 300 232, 600 258, 900 240 S 1400 230, 1600 244 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 815 C 300 790, 700 835, 1000 808 S 1450 800, 1600 815 L1600 900 L0 900 Z" fill="${t.groundDark}"/>
+    <path d="M-30 830 C 60 760, 160 770, 260 830 Z" fill="#e8bd83"/>`;
+  const trees = [
+    acacia(POCKET.midTop[0].x - 20, 535, 1.0), acacia(POCKET.midTop[1].x + 30, 540, 1.1),
+    acacia(POCKET.midTop[2].x - 25, 535, 0.95), acacia(POCKET.midTop[3].x + 20, 540, 1.05),
+    acacia(POCKET.midLow[1].x - 30, 478, 0.9),
+  ].join("");
+  const props = [
+    oasis(1020, 725), datePalm(955, 760, 0.95), datePalm(1085, 752, 1.0), datePalm(1050, 770, 0.8),
+    tent(1440, 800), camel(1545, 650, 1.1), camel(1505, 665, 0.9),
+    well(600, 805), camel(180, 800, 1.0), sandRock(250, 805, 1.4), lizard(700, 800),
+    `<g transform="translate(1555 470)">${signpost(0, 0)}</g>`,
+  ].join("");
+  const keepOut = [
+    { x: 890, y: 640, w: 260, h: 130 }, { x: 1360, y: 740, w: 170, h: 80 }, { x: 1470, y: 380, w: 130, h: 300 },
+    { x: 550, y: 720, w: 180, h: 100 }, { x: 130, y: 740, w: 160, h: 80 },
+  ];
+  const details = scatter([shrub, shrub, sandRock, ripple, ripple, pebble], 60, 3, keepOut);
+  return `${sky}${back}${ground}${details}${trees}${props}`;
+}
+
+// ------------------------------------------------------------------ station icons (white on a coloured disc)
+
+const ICONS = {
+  spark: `<polygon points="0,-16 4,-5 16,-5 6,2 10,14 0,7 -10,14 -6,2 -16,-5 -4,-5" fill="#fff"/>`,
+  key: `<circle cx="7" cy="-6" r="7" fill="none" stroke="#fff" stroke-width="4"/>
+        <path d="M2 -1 L-12 13 M-6 7 L-2 11 M-10 11 L-6 15" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`,
+  cards: `<rect x="-14" y="-13" width="17" height="24" rx="3" fill="#fff" opacity=".65" transform="rotate(-12)"/>
+          <rect x="-4" y="-12" width="17" height="24" rx="3" fill="#fff" transform="rotate(10)"/>`,
+  fork: `<path d="M0 15 L0 -2 M0 -2 L-11 -13 M0 -2 L11 -13" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none"/>
+         <path d="M-15 -11 l2 -7 l7 2 M15 -11 l-2 -7 l-7 2" stroke="#fff" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  lock: `<path d="M-8 -3 V-8 a8 8 0 0 1 16 0 V-3" stroke="#fff" stroke-width="4" fill="none"/>
+         <rect x="-12" y="-3" width="24" height="18" rx="4" fill="#fff"/>`,
+  trophy: `<path d="M-10 -14 H10 V-4 a10 10 0 0 1 -20 0 Z" fill="#fff"/>
+           <path d="M-10 -10 h-5 a5 5 0 0 0 5 8 M10 -10 h5 a5 5 0 0 1 -5 8" stroke="#fff" stroke-width="2.5" fill="none"/>
+           <rect x="-2" y="5" width="4" height="6" fill="#fff"/><rect x="-8" y="11" width="16" height="4" rx="1" fill="#fff"/>`,
+  seal: `<circle r="10" fill="#fff"/><circle r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+         <path d="M-6 8 L-9 17 L-3 14 L0 18 M6 8 L9 17 L3 14 L0 18" fill="#fff"/>`,
+};
+const CHECK = `<path d="M-6 0 L-2 4 L6 -5" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
+const LOCK_SMALL = `<path d="M-4 -2 V-5 a4 4 0 0 1 8 0 V-2" stroke="currentColor" stroke-width="2" fill="none"/>
+  <rect x="-6" y="-2" width="12" height="9" rx="2" fill="currentColor"/>`;
+
+// ------------------------------------------------------------------ stations: pin + card
+
+function stationMarkup(t, i, current) {
+  const s = STATIONS[i], p = POS[i];
+  const state = i < current ? "done" : i === current ? "now" : "next";
+  const upper = i % 2 === 0;
+  const muted = "#9aa5ae";
+  const pinColor = state === "next" ? muted : t.accent;
+
+  // Card above upper stations, below lower ones; a short stem links it to the pin.
+  const { x: cx, y: cy, w: cw, h: ch } = cardRect(i);
+  const stemY1 = upper ? cy + ch : cy, stemY2 = upper ? p.y - 70 : p.y + 12;
+  const cardStroke = state === "now" ? t.accent : "#e3ddd0";
+  const cardOpacity = state === "next" ? 0.82 : 1;
+  const status = state === "done"
+    ? `<g transform="translate(${cx + 26} ${cy + 74})"><circle r="10" fill="${t.accent}"/>${CHECK}</g>
+       <text x="${cx + 42}" y="${cy + 79}" text-anchor="start" direction="ltr" font-size="15" fill="${t.accent}" font-weight="700">הושלם</text>`
+    : state === "now"
+    ? `<rect x="${cx + 14}" y="${cy + 62}" width="92" height="24" rx="12" fill="${t.accent}"/>
+       <text x="${cx + 60}" y="${cy + 79}" text-anchor="middle" font-size="15" fill="#fff" font-weight="700">אנחנו כאן</text>`
+    : `<g transform="translate(${cx + 26} ${cy + 74})" color="${muted}">${LOCK_SMALL}</g>`;
+
+  const card = `<g opacity="${cardOpacity}">
+    <line x1="${p.x}" y1="${stemY1}" x2="${p.x}" y2="${stemY2}" stroke="${cardStroke}" stroke-width="3" stroke-dasharray="2 5" stroke-linecap="round"/>
+    <rect x="${cx + 3}" y="${cy + 5}" width="${cw}" height="${ch}" rx="18" fill="#000" opacity=".08"/>
+    <rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" rx="18" fill="#fff" stroke="${cardStroke}" stroke-width="${state === "now" ? 4 : 2}"/>
+    <g transform="translate(${cx + cw - 34} ${cy + 34})" color="${pinColor}"><circle r="22" fill="${pinColor}"/>${ICONS[s.icon]}</g>
+    <text x="${cx + cw - 66}" y="${cy + 33}" font-size="24" font-weight="800" fill="${state === "next" ? "#6b7680" : t.ink}">${s.name}</text>
+    <text x="${cx + cw - 66}" y="${cy + 56}" font-size="15" fill="#5f6b75">${s.note}</text>
+    ${status}
+  </g>`;
+
+  // Map pin with the station number.
+  const r = state === "now" ? 30 : 24;
+  const pin = `<g transform="translate(${p.x} ${p.y})">
+    ${state === "now" ? `<circle cy="${-r * 1.75}" r="${r + 8}" fill="${t.accent}" opacity=".35" class="pulse"/>` : ""}
+    <ellipse cx="0" cy="${r * 0.15}" rx="${r * 0.9}" ry="${r * 0.35}" fill="#000" opacity=".12"/>
+    <path d="M0 0 C ${-r * .55} ${-r * .7}, ${-r} ${-r * 1.25}, ${-r} ${-r * 1.75} a${r} ${r} 0 0 1 ${2 * r} 0 C ${r} ${-r * 1.25}, ${r * .55} ${-r * .7}, 0 0 Z"
+      fill="${pinColor}" stroke="#fff" stroke-width="3"/>
+    <text x="0" y="${-r * 1.75 + r * 0.38}" text-anchor="middle" font-size="${r * 1.0}" font-weight="800" fill="#fff" direction="ltr">${s.n}</text>
+  </g>`;
+  return { card, pin };
+}
+
+// ------------------------------------------------------------------ whole screen
+
+function render(themeKey, current) {
+  const t = THEMES[themeKey];
+  const road = roadPath();
+  const parts = STATIONS.map((_, i) => stationMarkup(t, i, current));
+  const doneCount = current;
+  const header = `
+    <g>
+      <rect x="1060" y="18" width="520" height="70" rx="35" fill="#fff" opacity=".94"/>
+      <text x="1550" y="52" font-size="30" font-weight="800" fill="${t.ink}">מסע הידע: מחזור המים</text>
+      <text x="1550" y="76" font-size="17" fill="#5f6b75">מדעים · כיתות ה׳–ו׳</text>
+      <rect x="20" y="18" width="250" height="54" rx="27" fill="#fff" opacity=".94"/>
+      <text x="245" y="52" font-size="19" fill="${t.ink}" font-weight="700">ערכה: ${t.name}</text>
+    </g>`;
+  const footer = `
+    <g>
+      <rect x="560" y="838" width="480" height="50" rx="25" fill="${t.accent}"/>
+      <text x="800" y="871" text-anchor="middle" font-size="22" font-weight="700" fill="#fff">
+        ${doneCount} מתוך 7 תחנות הושלמו · עכשיו: ${STATIONS[current].name}</text>
+    </g>`;
+
+  return `<svg xmlns="${svgNS}" viewBox="0 0 1600 900" role="img"
+      aria-label="מפת מסע הידע: שבע תחנות לאורך שביל, ${STATIONS[current].name} היא התחנה הנוכחית">
+    <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${t.sky[0]}"/><stop offset="1" stop-color="${t.sky[1]}"/></linearGradient></defs>
+    <rect width="1600" height="900" fill="url(#sky)"/>
+    ${t.scenery(t)}
+    <path d="${road}" fill="none" stroke="${t.roadEdge}" stroke-width="74" stroke-linecap="round"/>
+    <path d="${road}" fill="none" stroke="${t.road}" stroke-width="58" stroke-linecap="round"/>
+    <path d="${road}" fill="none" stroke="${t.dash}" stroke-width="4" stroke-dasharray="18 16"/>
+    ${parts.map(p => p.card).join("")}
+    ${parts.map(p => p.pin).join("")}
+    ${header}${footer}
+  </svg>`;
+}
+
+// ------------------------------------------------------------------ demo wiring
+
+const params = new URLSearchParams(location.search);
+let theme = THEMES[params.get("theme")] ? params.get("theme") : "forest";
+let current = Math.min(6, Math.max(0, Number(params.get("station") || 4) - 1));
+if (params.has("clean")) document.body.classList.add("hide-controls");
+
+const themeButtons = document.getElementById("theme-buttons");
+for (const [key, t] of Object.entries(THEMES)) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = t.name; b.dataset.theme = key;
+  b.addEventListener("click", () => { theme = key; draw(); });
+  themeButtons.append(b);
+}
+document.getElementById("prev").addEventListener("click", () => { current = Math.max(0, current - 1); draw(); });
+document.getElementById("next").addEventListener("click", () => { current = Math.min(6, current + 1); draw(); });
+
+function draw() {
+  document.getElementById("stage").innerHTML = render(theme, current);
+  for (const b of themeButtons.children) b.setAttribute("aria-pressed", String(b.dataset.theme === theme));
+}
+draw();
+</script>
+</body>
+</html>

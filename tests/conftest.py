@@ -18,14 +18,7 @@ def game_data() -> dict[str, Any]:
     return copy.deepcopy(_SAMPLE)
 
 
-def station(data: dict[str, Any], kind: str) -> dict[str, Any]:
-    """The station of the given kind inside a game dict."""
-    found: dict[str, Any] = next(s for s in data["stations"] if s["kind"] == kind)
-    return found
-
-
-def first_question(data: dict[str, Any], kind: str) -> dict[str, Any]:
-    """The first regular question of a station."""
-    steps = station(data, kind)["steps"]
-    found: dict[str, Any] = next(s for s in steps if s["type"] == "question")["question"]
+def stations(data: dict[str, Any]) -> dict[str, Any]:
+    """The seven stations of a game dict, by name."""
+    found: dict[str, Any] = data["stations"]
     return found

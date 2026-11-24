@@ -18,8 +18,8 @@ def test_schema_accepts_the_sample_game(game_data: dict[str, Any]) -> None:
     jsonschema.validate(game_data, game_schema())
 
 
-def test_schema_rejects_a_question_with_three_answers(game_data: dict[str, Any]) -> None:
-    game_data["anchor_question"]["answers"].pop()
+def test_schema_rejects_a_question_with_five_answers(game_data: dict[str, Any]) -> None:
+    game_data["anchor_question"]["answers"].append("חמישית")
     validator = jsonschema.Draft202012Validator(game_schema())
     assert not validator.is_valid(game_data)
 

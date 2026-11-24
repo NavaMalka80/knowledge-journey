@@ -1,9 +1,11 @@
-"""The fixed seven-station template.
+"""The fixed seven-station template and its default values.
 
 Every game passes through the same seven stations, in the same order, for a total
-of 45 minutes. This module is the single place that describes the template, so a
-change requested by the client (for example, how many riddles station 5 holds)
-is a one-line change here.
+of 45 minutes. The *structure* of each station lives in ``models.py``; this module
+holds the *numbers*: time budgets, voting times, scoring and thresholds.
+
+All of these are proposed defaults from the client's specification and still await
+final approval (ADR 0004), so they are kept here, in one place, to be easy to change.
 """
 
 from dataclasses import dataclass
@@ -24,32 +26,67 @@ class StationKind(StrEnum):
 
 @dataclass(frozen=True)
 class StationRule:
-    """What the template requires from one station.
-
-    A count of ``None`` means "no rule yet": the requirements do not fix it.
-    Question counts include the anchor question where it appears.
-    """
-
     title: str
-    duration_minutes: int
-    knowledge: int | None = None
-    questions: int | None = None
-    min_questions: int = 0
-    media: int | None = None
-    has_anchor: bool = False
+    duration_seconds: int
 
 
 STATION_RULES: dict[StationKind, StationRule] = {
-    StationKind.SPARK: StationRule("הניצוץ", 3, knowledge=0, questions=1, media=1, has_anchor=True),
-    StationKind.DISCOVER: StationRule("מגלים", 7, knowledge=3),
-    StationKind.RETRIEVE: StationRule("שולפים", 6, questions=6),
-    StationKind.CONNECT: StationRule("מחברים", 9, questions=2, media=1),
-    StationKind.CRACK: StationRule("מפצחים", 8, questions=4),
-    # Three rounds (speed, accuracy, thinking); questions per round are still open.
-    StationKind.CHAMPIONSHIP: StationRule("אליפות הידע", 8, min_questions=3),
-    # The anchor question returns, plus one new transfer question.
-    StationKind.SEAL: StationRule("חותם הידע", 4, questions=2, has_anchor=True),
+    StationKind.SPARK: StationRule("הניצוץ", 180),
+    StationKind.DISCOVER: StationRule("מגלים", 420),
+    StationKind.RETRIEVE: StationRule("שולפים", 360),
+    StationKind.CONNECT: StationRule("מחברים", 540),
+    StationKind.CRACK: StationRule("מפצחים", 480),
+    StationKind.CHAMPIONSHIP: StationRule("אליפות הידע", 480),
+    StationKind.SEAL: StationRule("חותם הידע", 240),
 }
 
 STATION_ORDER: tuple[StationKind, ...] = tuple(StationKind)
-TOTAL_MINUTES = 45
+TOTAL_SECONDS = 45 * 60
+
+
+class VoteKind(StrEnum):
+    """Kinds of vote, each with its own default voting time."""
+
+    RECALL = "recall"
+    DISTINGUISH = "distinguish"
+    CASE = "case"
+    LOCK = "lock"
+    SPEED = "speed"
+    ACCURACY = "accuracy"
+    THINKING = "thinking"
+
+
+# Default voting time in seconds. A question may override it with ``vote_seconds``.
+# Where the specification gives a range, the upper bound is used.
+VOTE_SECONDS: dict[VoteKind, int] = {
+    VoteKind.RECALL: 20,
+    VoteKind.DISTINGUISH: 30,
+    VoteKind.CASE: 45,
+    VoteKind.LOCK: 30,
+    VoteKind.SPEED: 10,
+    VoteKind.ACCURACY: 25,
+    VoteKind.THINKING: 45,
+}
+
+
+@dataclass(frozen=True)
+class ChampionshipRound:
+    title: str
+    questions: int
+    seconds: int
+    points: int
+    vote: VoteKind
+
+
+CHAMPIONSHIP_ROUNDS: tuple[ChampionshipRound, ...] = (
+    ChampionshipRound("מהירות", 4, 120, 10, VoteKind.SPEED),
+    ChampionshipRound("דיוק", 3, 180, 20, VoteKind.ACCURACY),
+    ChampionshipRound("חשיבה", 2, 180, 30, VoteKind.THINKING),
+)
+
+# Names of the three keys (station 2) and the four locks (station 5), in order.
+KEY_TITLES: tuple[str, ...] = ("מזהים", "מבינים", "מבחינים")
+LOCK_TITLES: tuple[str, ...] = ("מנעול הזיהוי", "מנעול הדיוק", "מנעול היישום", "מנעול הפיצוח")
+
+# Show the extended reinforcement when fewer than this share of votes were correct.
+REINFORCEMENT_THRESHOLD = 0.70
