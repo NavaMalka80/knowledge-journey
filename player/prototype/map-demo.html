@@ -27,8 +27,10 @@
   .bob { animation: bob 2.4s ease-in-out infinite; }
   @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
   .drift { animation: drift 40s linear infinite alternate; }
+  .spin { animation: spin 6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes drift { from { transform: translateX(-30px); } to { transform: translateX(30px); } }
-  @media (prefers-reduced-motion: reduce) { .pulse, .bob, .drift { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .pulse, .bob, .drift, .spin { animation: none; } }
 
   /* Demo-only controls (not part of the classroom screen). */
   .controls {
@@ -86,6 +88,13 @@ const POCKET = {
 // ------------------------------------------------------------------ themes ("skins")
 
 const THEMES = {
+  city: {
+    name: "עיר ירוקה",
+    sky: ["#cfe6f5", "#eef6f0"], ground: "#d4eac3", groundDark: "#bfdcab",
+    road: "#f3f4f6", roadEdge: "#9aa7b1", dash: "#c3ccd3",
+    accent: "#5b4bb7", accentSoft: "#e6e2f6", ink: "#2a2450",
+    scenery: (t) => cityScenery(t),
+  },
   forest: {
     name: "הרים ויער",
     sky: ["#cfe8f3", "#eef7ea"], ground: "#cfe5b5", groundDark: "#b7d79a",
@@ -99,6 +108,13 @@ const THEMES = {
     road: "#fffaf0", roadEdge: "#e2c27f", dash: "#d9c49a",
     accent: "#1f6f99", accentSoft: "#dcecf5", ink: "#173447",
     scenery: beachScenery,
+  },
+  desert: {
+    name: "מדבר ונווה",
+    sky: ["#f9dcb4", "#fdf1dc"], ground: "#f1d29f", groundDark: "#e6bf84",
+    road: "#fbf3e2", roadEdge: "#d9a35f", dash: "#d3b48a",
+    accent: "#b8562a", accentSoft: "#f6e1d3", ink: "#4a2a17",
+    scenery: (t) => desertScenery(t),
   },
 };
 
@@ -420,6 +436,164 @@ function beachScenery(t) {
   const details = scatter([shell, shell, starfish, pebble, tuft("#b9b36a"), tuft("#a8a85c")], 60, 11, keepOut);
   return `${sky}${sea}${dolphin(390, 228)}${boat(470, 205, .9)}${boat(1060, 200, .7, "#3f9bd0")}${boat(40, 210, .6)}
     ${buoy(760, 236)}${buoy(1180, 238)}${fish(700, 225)}${pier}${ground}${foam}${lighthouse}${lagoon}${details}${palms}${props}`;
+}
+
+// ------------------------------------------------------------------ green city
+
+function building(x, y, w, h, c, win = "#bfe3f2") {
+  let s = `<g transform="translate(${x} ${y})"><rect x="${-w / 2}" y="${-h}" width="${w}" height="${h}" fill="${c}"/>
+    <rect x="${-w / 2 - 3}" y="${-h - 6}" width="${w + 6}" height="6" fill="#00000022"/>`;
+  for (let fy = -h + 12; fy < -18; fy += 18)
+    for (let fx = -w / 2 + 8; fx < w / 2 - 8; fx += 16) s += `<rect x="${fx}" y="${fy}" width="9" height="10" fill="${win}"/>`;
+  return s + `<rect x="-7" y="-16" width="14" height="16" fill="#6b5a48"/></g>`;
+}
+function turbine(x, y, h, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <polygon points="-3,0 3,0 1.5,${-h} -1.5,${-h}" fill="#f2f4f5" stroke="#cfd6da"/>
+    <g transform="translate(0 ${-h})"><g class="spin">
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da"/>
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da" transform="rotate(120)"/>
+      <path d="M0 0 L-3 -46 L3 -46 Z" fill="#f2f4f5" stroke="#cfd6da" transform="rotate(240)"/></g>
+      <circle r="4" fill="#cfd6da"/></g></g>`;
+}
+function lamp(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-2" y="-52" width="4" height="52" fill="#56636e"/>
+    <path d="M-2 -52 q0 -8 10 -8 h6" stroke="#56636e" stroke-width="3" fill="none"/><ellipse cx="15" cy="-58" rx="6" ry="4" fill="#ffe08a"/></g>`;
+}
+function bench(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-24" y="-18" width="48" height="5" rx="2" fill="#b07a4a"/>
+    <rect x="-24" y="-28" width="48" height="5" rx="2" fill="#b07a4a"/><rect x="-20" y="-13" width="4" height="13" fill="#56636e"/>
+    <rect x="16" y="-13" width="4" height="13" fill="#56636e"/></g>`;
+}
+function trafficLight(x, y) {
+  return `<g transform="translate(${x} ${y})"><rect x="-2" y="-40" width="4" height="40" fill="#56636e"/>
+    <rect x="-9" y="-82" width="18" height="44" rx="6" fill="#3a4650"/>
+    <circle cy="-72" r="5" fill="#e9634f"/><circle cy="-60" r="5" fill="#f2b33d" opacity=".5"/><circle cy="-48" r="5" fill="#5bbf6a" opacity=".5"/></g>`;
+}
+function fountainPark(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse rx="100" ry="38" fill="#9ccf86"/><ellipse rx="62" ry="22" fill="#d6dde2"/><ellipse rx="54" ry="17" fill="#8fd0e6"/>
+    <rect x="-5" y="-30" width="10" height="28" fill="#d6dde2"/><ellipse cy="-30" rx="16" ry="5" fill="#d6dde2"/>
+    <path d="M0 -32 q-14 -18 -24 4 M0 -32 q14 -18 24 4 M0 -32 v-16" stroke="#bfe6f3" stroke-width="3" fill="none" stroke-linecap="round"/>
+    ${duck(-30, 6)}${duck(26, 10, true)}</g>`;
+}
+function duck(x, y, flip = false) {
+  return `<g transform="translate(${x} ${y}) scale(${flip ? -1 : 1} 1)"><ellipse cx="0" cy="0" rx="9" ry="5" fill="#fff"/>
+    <circle cx="7" cy="-6" r="4" fill="#fff"/><path d="M10 -6 l5 1 l-5 2 z" fill="#f2a33d"/><circle cx="8" cy="-7" r="1" fill="#333"/></g>`;
+}
+function skyline(base) {
+  const blocks = [[40, 60, 70], [110, 44, 110], [160, 50, 80], [230, 40, 130], [290, 56, 90], [700, 46, 100], [760, 60, 140],
+    [830, 42, 90], [1120, 50, 120], [1180, 44, 90], [1300, 52, 110], [1370, 40, 150], [1430, 58, 95], [1520, 46, 125]];
+  return blocks.map(([x, w, h]) => `<rect x="${x - w / 2}" y="${base - h}" width="${w}" height="${h}" fill="#b9cfdc"/>
+    ${Array.from({ length: Math.floor(h / 22) }, (_, i) => `<rect x="${x - w / 2 + 8}" y="${base - h + 10 + i * 22}" width="${w - 16}" height="6" fill="#d3e3ec"/>`).join("")}`).join("");
+}
+
+function cityScenery(t) {
+  const sky = `<g class="drift">${cloud(700, 70, 1)}${cloud(1080, 50, .8)}${cloud(240, 95, .7)}${cloud(1460, 100, .6)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="62" r="34" fill="#f7c95c"/>${bird(860, 110)}${bird(890, 100, .8)}${bird(560, 85, .7)}`;
+  const ground = `<path d="M0 240 C 300 225, 600 255, 900 238 S 1400 225, 1600 240 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 820 C 300 800, 700 840, 1000 812 S 1450 805, 1600 820 L1600 900 L0 900 Z" fill="${t.groundDark}"/>`;
+  const turbines = `${turbine(POCKET.sky[0].x - 40, 246, 120, 1)}${turbine(POCKET.sky[0].x + 45, 246, 95, .9)}${turbine(POCKET.sky[1].x, 246, 110, .95)}`;
+  const trees = [
+    roundTree(POCKET.midTop[0].x - 30, 530, 1.1), roundTree(POCKET.midTop[0].x + 25, 540, 0.9, "#5ea05a"),
+    building(POCKET.midTop[1].x - 10, 548, 52, 96, "#f0e6d8"), roundTree(POCKET.midTop[1].x + 42, 540, 0.85), roundTree(POCKET.midTop[2].x + 20, 535, 1.1, "#5ea05a"),
+    building(POCKET.midTop[3].x + 5, 548, 56, 110, "#d9e4ea"), roundTree(POCKET.midTop[3].x - 45, 540, 0.85, "#5ea05a"), roundTree(POCKET.midLow[0].x + 35, 475, 1.0, "#5ea05a"),
+    roundTree(POCKET.midLow[1].x - 30, 475, 1.0), roundTree(POCKET.midLow[2].x + 30, 475, 0.95, "#5ea05a"),
+  ].join("");
+  const props = [
+    building(1380, 810, 60, 120, "#f0e6d8"), building(1450, 812, 54, 90, "#e7d3bd"), building(1515, 808, 58, 140, "#d9e4ea"),
+    house(1560, 640, 1.1, "#f2efe8", "#c8553d"), lamp(1505, 650), trafficLight(1560, 470),
+    house(150, 805, 1.1, "#f2efe8", "#c8553d"), house(235, 810, 0.95, "#f4e3c7", "#5b4bb7"),
+    bench(560, 800), lamp(610, 805), bench(660, 805), roundTree(705, 800, 1.0),
+    fountainPark(1020, 725), lamp(1140, 790),
+  ].join("");
+  const keepOut = [
+    { x: 910, y: 680, w: 240, h: 90 }, { x: 1340, y: 660, w: 220, h: 160 }, { x: 1490, y: 380, w: 110, h: 290 },
+    { x: 110, y: 740, w: 180, h: 80 }, { x: 530, y: 740, w: 200, h: 80 }, { x: 1120, y: 720, w: 50, h: 80 },
+    { x: 970, y: 440, w: 110, h: 110 }, { x: 125, y: 430, w: 110, h: 120 },
+  ];
+  const details = scatter([tuft("#7fb069"), flowers, flowers, bush("#6fae5f", "#82be6e"), bush("#5ea05a", "#76b467")], 60, 5, keepOut);
+  return `${sky}${skyline(246)}${turbines}${ground}${details}${trees}${props}`;
+}
+
+// ------------------------------------------------------------------ desert and oasis
+
+function mesa(x, base, w, h, c) {
+  return `<path d="M${x - w / 2} ${base} L${x - w / 2 + 24} ${base - h} L${x + w / 2 - 24} ${base - h} L${x + w / 2} ${base} Z" fill="${c}"/>
+    <path d="M${x - w / 2 + 24} ${base - h} L${x + w / 2 - 24} ${base - h} L${x + w / 2 - 30} ${base - h + 10} L${x - w / 2 + 30} ${base - h + 10} Z" fill="#fff" opacity=".18"/>`;
+}
+function acacia(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <path d="M0 0 L0 -26 M0 -22 L-14 -36 M0 -24 L12 -38" stroke="#8a6a4a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="-4" cy="-42" rx="34" ry="9" fill="#8fa95a"/><ellipse cx="6" cy="-48" rx="24" ry="7" fill="#a3bb6a"/></g>`;
+}
+function camel(x, y, s = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${s})" fill="#c99a5f">
+    <path d="M-24 -26 C -22 -44, -8 -44, -4 -32 C 0 -46, 14 -46, 16 -30 L18 -26 Z"/>
+    <rect x="-22" y="-28" width="40" height="12" rx="6"/>
+    <rect x="-20" y="-18" width="4" height="18"/><rect x="-12" y="-18" width="4" height="18"/><rect x="6" y="-18" width="4" height="18"/><rect x="13" y="-18" width="4" height="18"/>
+    <path d="M16 -26 Q 26 -30 26 -44 L32 -46 L34 -40 L30 -40 Q 30 -26 20 -18 Z"/><circle cx="31" cy="-44" r="1.2" fill="#3a2a1a"/></g>`;
+}
+function tent(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <path d="M-60 0 L-46 -40 L46 -40 L60 0 Z" fill="#6b4f3a"/><path d="M-46 -40 L0 -52 L46 -40 Z" fill="#5a412f"/>
+    ${[-34, -14, 6, 26].map(d => `<line x1="${d}" x2="${d + 4}" y1="-40" y2="0" stroke="#e8d5b0" stroke-width="3" opacity=".6"/>`).join("")}
+    <path d="M-12 0 L-6 -26 L6 -26 L12 0 Z" fill="#3e2c20"/>
+    <line x1="-60" y1="0" x2="-74" y2="8" stroke="#8a6a4a" stroke-width="2"/><line x1="60" y1="0" x2="74" y2="8" stroke="#8a6a4a" stroke-width="2"/></g>`;
+}
+function well(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse cy="-4" rx="30" ry="9" fill="#9b8a76"/><rect x="-30" y="-24" width="60" height="20" fill="#c4b29a"/>
+    ${[-30, -15, 0, 15].map(d => `<rect x="${d}" y="-24" width="14" height="9" fill="none" stroke="#a8977f"/>`).join("")}
+    <rect x="-26" y="-62" width="5" height="40" fill="#8a6a4a"/><rect x="21" y="-62" width="5" height="40" fill="#8a6a4a"/>
+    <path d="M-34 -60 L0 -76 L34 -60 Z" fill="#b5653d"/><line x1="0" y1="-60" x2="0" y2="-38" stroke="#5a412f" stroke-width="1.5"/>
+    <rect x="-6" y="-40" width="12" height="10" fill="#8a6a4a"/></g>`;
+}
+function lizard(x, y) {
+  return `<g transform="translate(${x} ${y})" fill="#8a9b4e"><ellipse cx="0" cy="-4" rx="10" ry="4"/><circle cx="11" cy="-5" r="3.5"/>
+    <path d="M-10 -4 q-10 2 -16 -4" stroke="#8a9b4e" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M-5 -1 l-3 5 M5 -1 l3 5 M-5 -7 l-3 -4 M5 -7 l3 -4" stroke="#8a9b4e" stroke-width="2"/></g>`;
+}
+function datePalm(x, y, s = 1) {
+  return `${palm(x, y, s)}<g transform="translate(${x} ${y}) scale(${s})"><circle cx="2" cy="-54" r="3" fill="#c0632b"/><circle cx="9" cy="-53" r="3" fill="#c0632b"/><circle cx="5" cy="-50" r="3" fill="#a5521f"/></g>`;
+}
+function oasis(x, y) {
+  return `<g transform="translate(${x} ${y})">
+    <ellipse rx="110" ry="42" fill="#b9c77f"/><ellipse rx="86" ry="28" fill="#6fc3d6"/><ellipse rx="64" ry="18" fill="#93d6e4"/>
+    <path d="M-40 -2 q8 -6 16 0 q8 6 16 0 M10 8 q8 -6 16 0 q8 6 16 0" stroke="#fff" stroke-width="2" fill="none"/></g>`;
+}
+const shrub = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <ellipse cx="0" cy="-6" rx="13" ry="7" fill="#a3a35a"/><ellipse cx="6" cy="-10" rx="8" ry="5" fill="#b8b46a"/></g>`;
+const sandRock = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})">
+  <path d="M-16 0 L-12 -12 L-2 -16 L10 -12 L16 0 Z" fill="#c89b6a"/><path d="M-2 -16 L10 -12 L4 -6 Z" fill="#dcb486"/></g>`;
+const ripple = (x, y, s) => `<path transform="translate(${x} ${y}) scale(${s})" d="M-18 0 q9 -6 18 0 q9 6 18 0" stroke="#e2bd84" stroke-width="2" fill="none"/>`;
+
+function desertScenery(t) {
+  const sky = `<g class="drift">${cloud(700, 70, .8)}${cloud(1460, 100, .55)}</g>
+    <circle cx="${POCKET.sky[2].x}" cy="64" r="42" fill="#ffd166"/><circle cx="${POCKET.sky[2].x}" cy="64" r="56" fill="#ffd166" opacity=".25"/>
+    ${bird(860, 110, 1.3)}${bird(1150, 95, 1.1)}`;
+  const back = `${mesa(150, 250, 240, 90, "#d79a68")}${mesa(560, 250, 200, 70, "#e0ab7b")}${mesa(1250, 250, 260, 100, "#d79a68")}${mesa(1500, 250, 180, 70, "#e0ab7b")}
+    <path d="M0 250 C 150 200, 300 205, 450 245 C 600 210, 800 200, 1000 248 C 1150 215, 1350 212, 1600 246 L1600 260 L0 260 Z" fill="#ebc48e"/>`;
+  const ground = `<path d="M0 244 C 300 232, 600 258, 900 240 S 1400 230, 1600 244 L1600 900 L0 900 Z" fill="${t.ground}"/>
+    <path d="M0 815 C 300 790, 700 835, 1000 808 S 1450 800, 1600 815 L1600 900 L0 900 Z" fill="${t.groundDark}"/>
+    <path d="M-30 830 C 60 760, 160 770, 260 830 Z" fill="#e8bd83"/>`;
+  const trees = [
+    acacia(POCKET.midTop[0].x - 20, 535, 1.0), acacia(POCKET.midTop[1].x + 30, 540, 1.1),
+    acacia(POCKET.midTop[2].x - 25, 535, 0.95), acacia(POCKET.midTop[3].x + 20, 540, 1.05),
+    acacia(POCKET.midLow[1].x - 30, 478, 0.9),
+  ].join("");
+  const props = [
+    oasis(1020, 725), datePalm(955, 760, 0.95), datePalm(1085, 752, 1.0), datePalm(1050, 770, 0.8),
+    tent(1440, 800), camel(1545, 650, 1.1), camel(1505, 665, 0.9),
+    well(600, 805), camel(180, 800, 1.0), sandRock(250, 805, 1.4), lizard(700, 800),
+    `<g transform="translate(1555 470)">${signpost(0, 0)}</g>`,
+  ].join("");
+  const keepOut = [
+    { x: 890, y: 640, w: 260, h: 130 }, { x: 1360, y: 740, w: 170, h: 80 }, { x: 1470, y: 380, w: 130, h: 300 },
+    { x: 550, y: 720, w: 180, h: 100 }, { x: 130, y: 740, w: 160, h: 80 },
+  ];
+  const details = scatter([shrub, shrub, sandRock, ripple, ripple, pebble], 60, 3, keepOut);
+  return `${sky}${back}${ground}${details}${trees}${props}`;
 }
 
 // ------------------------------------------------------------------ station icons (white on a coloured disc)
