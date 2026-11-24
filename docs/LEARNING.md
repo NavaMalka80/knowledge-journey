@@ -108,9 +108,9 @@ class Question(StrictModel):
 
 ```python
 class DiscoverStation(StrictModel):
-    identify: Key       # מזהים
-    understand: Key     # מבינים
-    distinguish: Key    # מבחינים
+    identify: Key  # מזהים
+    understand: Key  # מבינים
+    distinguish: Key  # מבחינים
 ```
 
 אי אפשר לכתוב תחנת "מגלים" עם שני מפתחות או עם ארבעה. המבנה עצמו לא מאפשר את זה. זה אותו עיקרון כמו שאלת העוגן בשלב 1: **מצב לא חוקי שאי אפשר לייצג**. בונוס: קובץ המשחק קריא יותר, כי כתוב בו `"locks"` ולא `"steps"`.
